@@ -12,12 +12,9 @@ var dbContextOptions = new DbContextOptionsBuilder<TestDbContext>()
     .Options;
 var testDbContext = new TestDbContext(dbContextOptions);
 var data = await ReadDb();
-
-var listener = new Thread(() => DataReception.HttpListen(data));
-listener.Start();
-
 var redis = new RedisDb();
 
+var reader = Task.Run(async() => await QueueReader.SubscriptionQueueRead(data, redis));
 
 while (true)
 {
@@ -31,7 +28,7 @@ while (true)
                 if (parseResult.Ok)
                 {
                     await WriteDb(entry.Key);
-                    await WriteDataInQueue(entry.Key);
+                    await WriteDataInMessageQueue(entry.Key);
                 }
             }
             else
@@ -70,7 +67,7 @@ async Task WriteDb(ApartmentDb apartment)
     await testDbContext.SaveChangesAsync();
 }
 
-async Task WriteDataInQueue(ApartmentDb apartment)
+async Task WriteDataInMessageQueue(ApartmentDb apartment)
 {
     if (data.SubscribersByApartment.TryGetValue(apartment, out var subscriberDbs))
     {

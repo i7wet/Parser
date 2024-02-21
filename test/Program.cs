@@ -1,7 +1,9 @@
 using DbContext.Database;
 using Microsoft.EntityFrameworkCore;
+using Redis;
 using SimpleInjector;
 using SimpleInjector.Lifestyles;
+using test;
 
 
 var container = new Container();
@@ -29,7 +31,8 @@ var dbContextOptions = new DbContextOptionsBuilder<TestDbContext>()
     .UseSqlServer(builder.Configuration.GetConnectionString("Default"))
     .Options;
 container.Register<TestDbContext>(() => new TestDbContext(dbContextOptions));
-container.Register<HttpClient>(() => new HttpClient());
+container.Register<RedisDb>();
+container.Register<IConverter, Converter>();
 
 var app = builder.Build();
 app.Services.UseSimpleInjector(container);

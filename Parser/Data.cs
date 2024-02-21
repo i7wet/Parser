@@ -25,11 +25,11 @@ public class Data
       {
          SubscribersByApartment.AddOrUpdate(apartmentDb,
             (apartmentDb) => { return new ConcurrentBag<SubscriberDb>() { subscriberDb }; },
-            (db, dbs) =>
+            (apartmentDb, subscribersDb) =>
             {
-               if(!dbs.Contains(subscriberDb))
-                  dbs.Add(subscriberDb);
-               return dbs;
+               if(!subscribersDb.Contains(subscriberDb))
+                  subscribersDb.Add(subscriberDb);
+               return subscribersDb;
             });
       }
    }
