@@ -1,4 +1,5 @@
 ﻿using DbContext.Database.Models;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
@@ -10,14 +11,17 @@ public class TestDbContext : Microsoft.EntityFrameworkCore.DbContext
     public DbSet<SubscriberDb> Subscribers { get; set; }
     public DbSet<ApartmentDb> Apartments { get; set; }
 
-    public TestDbContext(DbContextOptions<TestDbContext> options) : base(options)
-    {
-        // Database.EnsureCreated();
-    }
+    public TestDbContext(DbContextOptions<TestDbContext> options) : base(options) { }
 
-    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) { }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // optionsBuilder.UseSqlServer(@"Server=.\SQLEXPRESS;Database=test-db;Trusted_Connection=True;TrustServerCertificate=True;");
+        base.OnModelCreating(modelBuilder);
+        
+        modelBuilder.AddInboxStateEntity();
+        modelBuilder.AddOutboxStateEntity();
+        modelBuilder.AddOutboxMessageEntity();
     }
 }
 

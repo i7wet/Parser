@@ -1,6 +1,7 @@
 ﻿using DbContext.Database.Models;
-using Redis.Models;
+using RabbitMQ.Models;
 using Utilities;
+
 
 namespace test;
 

@@ -1,20 +1,48 @@
-﻿using System.Collections.Concurrent;
-using DbContext.Database;
+﻿using DbContext.Database;
 using DbContext.Database.Models;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Parser;
-using Redis;
-using Redis.Models;
+using RabbitMQ.Models;
 
+IServiceCollection serviceCollection = new ServiceCollection();
+serviceCollection.AddMassTransit(x =>
+{
+    x.AddEntityFrameworkOutbox<TestDbContext>(o =>
+    {
+        o.DuplicateDetectionWindow = TimeSpan.FromSeconds(30);
+        o.UseSqlServer();
+    });
+    
+    var assembly = typeof(Program).Assembly;
+    x.AddConsumers(assembly);
+    x.AddActivities(assembly);
+    
+    x.UsingRabbitMq((context, configurator) =>
+    {
+        configurator.ConfigureEndpoints(context);
+        configurator.Host("localhost", "/", h =>
+        {
+            h.Username("guest");
+            h.Password("guest");
+        });;
+    });
+});
 
-var dbContextOptions = new DbContextOptionsBuilder<TestDbContext>()
-    .UseSqlServer("Server=.\\SQLEXPRESS;Database=test-db;Trusted_Connection=True;TrustServerCertificate=True;")
-    .Options;
-var testDbContext = new TestDbContext(dbContextOptions);
-var data = await ReadDb();
-var redis = new RedisDb();
+serviceCollection.AddDbContext<TestDbContext>( x =>
+{
+    x.UseSqlServer("Server=.\\SQLEXPRESS;Database=test-db;Trusted_Connection=True;TrustServerCertificate=True;");
+});
+serviceCollection.AddSingleton<Data>(provider => Data.CreateData(provider.GetRequiredService<TestDbContext>()).Result);
+var serviceProvider = serviceCollection.BuildServiceProvider();
+await using var scope = serviceProvider.CreateAsyncScope();
+var testDbContext = scope.ServiceProvider.GetRequiredService<TestDbContext>();
+var busControl = serviceProvider.GetRequiredService<IBusControl>();
+await busControl.StartAsync();
+var data = scope.ServiceProvider.GetRequiredService<Data>();
+var publishEndPoint = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
 
-var reader = Task.Run(async() => await QueueReader.SubscriptionQueueRead(data, redis));
 
 while (true)
 {
@@ -43,23 +71,6 @@ while (true)
     }
 }
 
-async Task<Data> ReadDb()
-{
-    var apartments = await testDbContext.Apartments.ToListAsync();
-    var subscribers = await testDbContext.Subscribers.Include(subscriberDb => subscriberDb.Apartments).ToListAsync();
-    ConcurrentDictionary<ApartmentDb, ConcurrentBag<SubscriberDb>> subscribersByApartment = new();
-    foreach (var apartment in apartments)
-    {
-        var confirmedSubscribers = new ConcurrentBag<SubscriberDb>();
-        foreach (var subscriber in subscribers)
-            if (subscriber.Apartments.Contains(apartment))
-                confirmedSubscribers.Add(subscriber);
-
-        subscribersByApartment.TryAdd(apartment, confirmedSubscribers);
-    }
-
-    return new Data(subscribersByApartment);
-}
 
 async Task WriteDb(ApartmentDb apartment)
 {
@@ -74,7 +85,7 @@ async Task WriteDataInMessageQueue(ApartmentDb apartment)
         foreach (var sub in subscriberDbs)
         {
             var message = new Message(sub.Email, apartment.Url, apartment.Price);
-            await redis.EnqueueMessageAsync(message);
+            await publishEndPoint.Publish(message);
         }
     }
 }

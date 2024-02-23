@@ -1,37 +1,28 @@
-﻿using System.Net.Mail;
-using EmailService;
-using Redis;
+﻿using MassTransit;
+using Microsoft.Extensions.DependencyInjection;
 
-
-var redis = new RedisDb();
-var emailSenderAddress = "emailservice145@gmail.com";
-var client = Client.Create(emailSenderAddress);
-
-while (true)
+IServiceCollection serviceCollection = new ServiceCollection();
+serviceCollection.AddSingleton<EmailService.EmailService>();
+serviceCollection.AddMassTransit(x =>
 {
-    var data = await redis.GetMessageAsync();
-    if (data.IsSome)
+    var assembly = typeof(Program).Assembly;
+    x.AddConsumers(assembly);
+    x.AddActivities(assembly);
+    
+    x.UsingRabbitMq((context, configurator) =>
     {
-        var unwrapData = data.Unwrap();
-        var message = $"У квартиры {unwrapData.UrlApartment} новая цена => {unwrapData.Price}";
-        await SendMessage(unwrapData.Email, message);
-    }
-}
+        configurator.ConfigureEndpoints(context);
+        configurator.Host("localhost", "/", h =>
+        {
+            h.Username("guest");
+            h.Password("guest");
+        });;
+    });
+});
 
-async Task SendMessage(string to, string message)
-{
-    try
-    {
-        MailAddress from = new MailAddress(emailSenderAddress, "TestApp");
-        MailAddress two = new MailAddress(to);
-        MailMessage m = new MailMessage(from, two);
-        m.Subject = "Изменение цен";
-        m.Body = message;
-        await client.SendMailAsync(m);
-    }
-    catch (Exception e)
-    {
-        Console.WriteLine($"Не удалось отпарвить письмо. Почта - {to}.");
-        Console.WriteLine($"{e.Message}");
-    }
-}
+var serviceProvider = serviceCollection.BuildServiceProvider();
+await using var scope = serviceProvider.CreateAsyncScope();
+var busControl = serviceProvider.GetRequiredService<IBusControl>();
+await busControl.StartAsync();
+await Task.Delay(-1);
+

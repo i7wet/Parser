@@ -1,5 +1,4 @@
-﻿using Redis.Models;
-using Utilities;
+﻿using Utilities;
 
 namespace test;
 

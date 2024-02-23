@@ -1,4 +1,4 @@
-﻿namespace Redis.Models;
+﻿namespace RabbitMQ.Models;
 
 public class Subscriber
 {

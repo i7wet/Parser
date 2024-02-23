@@ -1,42 +1,36 @@
 using DbContext.Database;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
-using Redis;
-using SimpleInjector;
-using SimpleInjector.Lifestyles;
 using test;
-
-
-var container = new Container();
-container.Options.DefaultScopedLifestyle = new AsyncScopedLifestyle();
-container.Options.DefaultLifestyle = Lifestyle.Scoped;
-container.Options.ResolveUnregisteredConcreteTypes = false;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddLocalization();
-builder.Services.AddSimpleInjector(container, options =>
-{
-    // AddAspNetCore() wraps web requests in a Simple Injector scope and
-    // allows request-scoped framework services to be resolved.
-    options.AddAspNetCore()
-        .AddControllerActivation();
-
-    // Optionally, allow application components to depend on the non-generic
-    // ILogger (Microsoft.Extensions.Logging) or IStringLocalizer
-    // (Microsoft.Extensions.Localization) abstractions.
-    options.AddLogging();
-    options.AddLocalization();
-});
-var dbContextOptions = new DbContextOptionsBuilder<TestDbContext>()
-    .UseSqlServer(builder.Configuration.GetConnectionString("Default"))
-    .Options;
-container.Register<TestDbContext>(() => new TestDbContext(dbContextOptions));
-container.Register<RedisDb>();
-container.Register<IConverter, Converter>();
+builder.Services.AddDbContext<TestDbContext>( x => x.UseSqlServer(builder.Configuration.GetConnectionString("Default")));
+builder.Services.AddMassTransit(x =>
+    {
+        x.AddEntityFrameworkOutbox<TestDbContext>(o =>
+        {
+            o.QueryDelay = TimeSpan.FromSeconds(5);
+            o.UseSqlServer().UseBusOutbox();
+        });
+        x.UsingRabbitMq((context, configurator) =>
+        {
+            configurator.Host("localhost", "/", h =>
+            {
+                h.Username("guest");
+                h.Password("guest");
+            });
+            configurator.ConfigureEndpoints(context);
+        });
+    }
+);
+// builder.Services.AddTransient<RedisDb>();
+builder.Services.AddTransient<IConverter, Converter>();
 
 var app = builder.Build();
-app.Services.UseSimpleInjector(container);
-container.Verify(VerificationOption.VerifyAndDiagnose);
+// app.Services.UseSimpleInjector(container);
+// builder.Services.Verify(VerificationOption.VerifyAndDiagnose);
 
 app.MapControllerRoute(
     name: "default",
